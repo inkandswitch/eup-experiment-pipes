@@ -15,10 +15,6 @@ class App extends Component {
     dragAdjust: [0, 0]
   };
 
-  componentDidMount() {}
-
-  componentWillUmount() {}
-
   handleDoubleClick = e => {
     const anyEditing = Object.values(this.state.widgets).some(
       widget => widget.isEditing
@@ -106,6 +102,47 @@ class App extends Component {
     );
   };
 
+  handleWidgetResizeDragStart = (widget, e) => {
+    e.stopPropagation();
+
+    const [x, y] = [e.pageX, e.pageY];
+    const [ww, wh] = widget.rect.slice(2);
+
+    this.setState(
+      produce(draft => {
+        draft.dragAdjust = [x - ww, y - wh];
+      })
+    );
+  };
+
+  handleWidgetResizeDrag = (widget, e) => {
+    e.stopPropagation();
+
+    const [x, y] = [e.pageX, e.pageY];
+
+    if (x === 0 && y === 0) {
+      // we get 0, 0 at the end of the drag, this could be improved though
+      return;
+    }
+
+    this.setState(
+      produce(draft => {
+        draft.widgets[widget.id].rect[2] = x - draft.dragAdjust[0];
+        draft.widgets[widget.id].rect[3] = y - draft.dragAdjust[1];
+      })
+    );
+  };
+
+  handleWidgetResizeDragEnd = (widget, e) => {
+    e.stopPropagation();
+
+    this.setState(
+      produce(draft => {
+        draft.dragAdjust = [0, 0];
+      })
+    );
+  };
+
   render() {
     return (
       <div
@@ -116,14 +153,22 @@ class App extends Component {
         {Object.values(this.state.widgets).map(widget => {
           const [x, y, w, h] = widget.rect;
 
-          const dragProps = widget.isEditing
+          const widgetDragProps = widget.isEditing
             ? {}
             : {
                 draggable: true,
-                onDoubleClick: e => this.handleWidgetDoubleClick(widget, e),
                 onDragStart: e => this.handleWidgetDragStart(widget, e),
                 onDrag: e => this.handleWidgetDrag(widget, e),
                 onDragEnd: e => this.handleWidgetDragEnd(widget, e)
+              };
+
+          const resizeWidgetDragProps = widget.isEditing
+            ? {}
+            : {
+                draggable: true,
+                onDragStart: e => this.handleWidgetResizeDragStart(widget, e),
+                onDrag: e => this.handleWidgetResizeDrag(widget, e),
+                onDragEnd: e => this.handleWidgetResizeDragEnd(widget, e)
               };
 
           return (
@@ -137,15 +182,22 @@ class App extends Component {
                 width: w,
                 height: h
               }}
-              {...dragProps}
+              onDoubleClick={
+                widget.isEditing
+                  ? () => {}
+                  : e => this.handleWidgetDoubleClick(widget, e)
+              }
+              {...widgetDragProps}
             >
               {widget.isEditing ? (
                 <textarea
                   style={{
+                    fontFamily: "sans-serif",
                     width: "100%",
                     height: "100%",
                     padding: 0,
-                    border: 0
+                    border: 0,
+                    fontSize: 14
                   }}
                   value={widget.text}
                   onChange={e => this.handleWidgetTextChange(widget, e)}
@@ -158,12 +210,25 @@ class App extends Component {
                     overflow: "scroll",
                     width: "100%",
                     height: "100%",
-                    margin: 0
+                    margin: 0,
+                    fontSize: 14
                   }}
                 >
                   {widget.text}
                 </pre>
               )}
+
+              <div
+                style={{
+                  background: "#eee",
+                  width: 8,
+                  height: 8,
+                  position: "absolute",
+                  bottom: 0,
+                  right: 0
+                }}
+                {...resizeWidgetDragProps}
+              />
             </div>
           );
         })}
