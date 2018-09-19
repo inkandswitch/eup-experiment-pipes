@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@babel/standalone": "^7.1.0",
     "immer": "^1.7.1",
     "react": "^16.5.2",
     "react-dom": "^16.5.2",

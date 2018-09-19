@@ -2,12 +2,71 @@ import produce from "immer";
 import uuid from "uuid/v4";
 import React, { Component } from "react";
 
-const createWidget = ({ x, y, w = 200, h = 40 }) => ({
-  rect: [x, y, w, h],
-  id: uuid(),
-  isEditing: false,
-  text: "widget text"
-});
+const babel = require("@babel/standalone");
+
+// HACK: save react as window global so we can eval babel
+window.React = React;
+
+// FIXME: try-catches here are probably overkill, we can clean this up later
+const compileWidget = ({ code }) => {
+  let transformed, transformationError;
+
+  try {
+    transformed = babel.transform(
+      `
+        (function() {
+          ${code}
+        })()
+      `,
+      {
+        presets: ["es2015", "react"]
+      }
+    );
+  } catch (e) {
+    transformationError = e;
+  }
+
+  if (transformationError) {
+    return <pre style={{ color: "red" }}>{transformationError.toString()}</pre>;
+  }
+
+  let evaled, evalError;
+
+  try {
+    evaled = eval(transformed.code);
+  } catch (e) {
+    evalError = e;
+  }
+
+  if (evalError) {
+    return <pre style={{ color: "red" }}>{evalError.toString()}</pre>;
+  }
+
+  let run, runError;
+
+  try {
+    run = evaled();
+  } catch (e) {
+    runError = e;
+  }
+
+  if (runError) {
+    return <pre style={{ color: "red" }}>{runError.toString()}</pre>;
+  }
+
+  return run;
+};
+
+const createWidget = ({ x, y, w = 200, h = 40 }) => {
+  const metadata = {
+    rect: [x, y, w, h],
+    id: uuid(),
+    isEditing: false,
+    code: `return () => <div>widget</div>`
+  };
+
+  return { ...metadata, compiled: compileWidget(metadata) };
+};
 
 class App extends Component {
   state = {
@@ -39,9 +98,16 @@ class App extends Component {
   handleClickOutside = () => {
     this.setState(
       produce(draft => {
-        Object.values(draft.widgets).forEach(
-          widget => (widget.isEditing = false)
+        const widget = Object.values(draft.widgets).find(
+          widget => widget.isEditing
         );
+
+        if (!widget) {
+          return;
+        }
+
+        widget.isEditing = false;
+        widget.compiled = compileWidget(widget);
       })
     );
   };
@@ -97,7 +163,7 @@ class App extends Component {
 
     this.setState(
       produce(draft => {
-        draft.widgets[widget.id].text = value;
+        draft.widgets[widget.id].code = value;
       })
     );
   };
@@ -192,19 +258,19 @@ class App extends Component {
               {widget.isEditing ? (
                 <textarea
                   style={{
-                    fontFamily: "sans-serif",
+                    fontFamily: "monospace",
                     width: "100%",
                     height: "100%",
                     padding: 0,
                     border: 0,
                     fontSize: 14
                   }}
-                  value={widget.text}
+                  value={widget.code}
                   onChange={e => this.handleWidgetTextChange(widget, e)}
                   onClick={e => e.stopPropagation()}
                 />
               ) : (
-                <pre
+                <div
                   style={{
                     fontFamily: "sans-serif",
                     overflow: "scroll",
@@ -214,8 +280,8 @@ class App extends Component {
                     fontSize: 14
                   }}
                 >
-                  {widget.text}
-                </pre>
+                  {widget.compiled}
+                </div>
               )}
 
               <div
