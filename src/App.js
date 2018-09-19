@@ -1,6 +1,11 @@
 import produce from "immer";
 import uuid from "uuid/v4";
 import React, { Component } from "react";
+import AceEditor from "react-ace";
+
+import "brace/mode/javascript";
+import "brace/mode/jsx";
+import "brace/theme/xcode";
 
 const babel = require("@babel/standalone");
 
@@ -27,7 +32,7 @@ const compileWidget = ({ code }) => {
   }
 
   if (transformationError) {
-    return <pre style={{ color: "red" }}>{transformationError.toString()}</pre>;
+    return <pre className="red">{transformationError.toString()}</pre>;
   }
 
   let evaled, evalError;
@@ -39,7 +44,7 @@ const compileWidget = ({ code }) => {
   }
 
   if (evalError) {
-    return <pre style={{ color: "red" }}>{evalError.toString()}</pre>;
+    return <pre className="red">{evalError.toString()}</pre>;
   }
 
   let run, runError;
@@ -51,7 +56,7 @@ const compileWidget = ({ code }) => {
   }
 
   if (runError) {
-    return <pre style={{ color: "red" }}>{runError.toString()}</pre>;
+    return <pre className="red">{runError.toString()}</pre>;
   }
 
   return run;
@@ -107,7 +112,6 @@ class App extends Component {
         }
 
         widget.isEditing = false;
-        widget.compiled = compileWidget(widget);
       })
     );
   };
@@ -158,12 +162,13 @@ class App extends Component {
     );
   };
 
-  handleWidgetTextChange = (widget, e) => {
-    const { value } = e.target;
-
+  handleWidgetCodeChange = ({ id }, value) => {
     this.setState(
       produce(draft => {
-        draft.widgets[widget.id].code = value;
+        const widget = draft.widgets[id];
+
+        widget.code = value;
+        widget.compiled = compileWidget(widget);
       })
     );
   };
@@ -210,94 +215,86 @@ class App extends Component {
   };
 
   render() {
+    const editingWidget = Object.values(this.state.widgets).find(
+      widget => widget.isEditing
+    );
+
+    const anyEditing = !!editingWidget;
+
     return (
-      <div
-        onDoubleClick={this.handleDoubleClick}
-        onClick={this.handleClickOutside}
-        style={{ height: "100vh", width: "100vh" }}
-      >
-        {Object.values(this.state.widgets).map(widget => {
-          const [x, y, w, h] = widget.rect;
+      <div className="min-vh-100 sans-serif flex">
+        <div
+          onDoubleClick={this.handleDoubleClick}
+          onClick={this.handleClickOutside}
+          className="w-100"
+        >
+          {Object.values(this.state.widgets).map(widget => {
+            const [x, y, w, h] = widget.rect;
 
-          const widgetDragProps = widget.isEditing
-            ? {}
-            : {
-                draggable: true,
-                onDragStart: e => this.handleWidgetDragStart(widget, e),
-                onDrag: e => this.handleWidgetDrag(widget, e),
-                onDragEnd: e => this.handleWidgetDragEnd(widget, e)
-              };
+            const widgetDragProps = {
+              draggable: true,
+              onDragStart: e => this.handleWidgetDragStart(widget, e),
+              onDrag: e => this.handleWidgetDrag(widget, e),
+              onDragEnd: e => this.handleWidgetDragEnd(widget, e)
+            };
 
-          const resizeWidgetDragProps = widget.isEditing
-            ? {}
-            : {
-                draggable: true,
-                onDragStart: e => this.handleWidgetResizeDragStart(widget, e),
-                onDrag: e => this.handleWidgetResizeDrag(widget, e),
-                onDragEnd: e => this.handleWidgetResizeDragEnd(widget, e)
-              };
+            const resizeWidgetDragProps = {
+              draggable: true,
+              onDragStart: e => this.handleWidgetResizeDragStart(widget, e),
+              onDrag: e => this.handleWidgetResizeDrag(widget, e),
+              onDragEnd: e => this.handleWidgetResizeDragEnd(widget, e)
+            };
 
-          return (
-            <div
-              key={widget.id}
-              style={{
-                position: "absolute",
-                border: !widget.isEditing ? "1px solid #eee" : "1px solid red",
-                top: y,
-                left: x,
-                width: w,
-                height: h
-              }}
-              onDoubleClick={
-                widget.isEditing
-                  ? () => {}
-                  : e => this.handleWidgetDoubleClick(widget, e)
-              }
-              {...widgetDragProps}
-            >
-              {widget.isEditing ? (
-                <textarea
-                  style={{
-                    fontFamily: "monospace",
-                    width: "100%",
-                    height: "100%",
-                    padding: 0,
-                    border: 0,
-                    fontSize: 14
-                  }}
-                  value={widget.code}
-                  onChange={e => this.handleWidgetTextChange(widget, e)}
-                  onClick={e => e.stopPropagation()}
-                />
-              ) : (
-                <div
-                  style={{
-                    fontFamily: "sans-serif",
-                    overflow: "scroll",
-                    width: "100%",
-                    height: "100%",
-                    margin: 0,
-                    fontSize: 14
-                  }}
-                >
+            return (
+              <div
+                key={widget.id}
+                className={`
+                  absolute ba
+                  ${widget.isEditing ? "b--red" : "b--light-gray"}
+                `}
+                style={{
+                  top: y,
+                  left: x,
+                  width: w,
+                  height: h
+                }}
+                onDoubleClick={
+                  widget.isEditing
+                    ? () => {}
+                    : e => this.handleWidgetDoubleClick(widget, e)
+                }
+                {...widgetDragProps}
+              >
+                <div className="overflow-scroll mw-100 h-100 m0">
                   {widget.compiled}
                 </div>
-              )}
 
-              <div
-                style={{
-                  background: "#eee",
-                  width: 8,
-                  height: 8,
-                  position: "absolute",
-                  bottom: 0,
-                  right: 0
-                }}
-                {...resizeWidgetDragProps}
-              />
-            </div>
-          );
-        })}
+                <div
+                  className={`
+                    absolute right-0 bottom-0
+                    ${widget.isEditing ? "bg-red" : "bg-light-gray"}
+                  `}
+                  style={{ width: 12, height: 12 }}
+                  {...resizeWidgetDragProps}
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        {anyEditing && (
+          <div className="w-100 ba b--light-gray">
+            <AceEditor
+              mode="jsx"
+              theme="xcode"
+              value={editingWidget.code}
+              tabSize={2}
+              onChange={value =>
+                this.handleWidgetCodeChange(editingWidget, value)
+              }
+            />
+          </div>
+        )}
       </div>
     );
   }
