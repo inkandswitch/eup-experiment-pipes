@@ -14,7 +14,7 @@ const babel = require("@babel/standalone");
 window.React = React;
 
 // FIXME: try-catches here are probably overkill, we can clean this up later
-const compileDoc = code => {
+const compileWidget = code => {
   let transformed, transformationError;
 
   try {
@@ -48,42 +48,17 @@ const compileDoc = code => {
     return <pre className="red">{evalError.toString()}</pre>;
   }
 
-  let run, runError;
-
-  // try {
-  //   run = evaled();
-  // } catch (e) {
-  //   runError = e;
-  // }
-
-  // if (runError) {
-  //   return <pre className="red">{runError.toString()}</pre>;
-  // }
-
-  // console.log({ run })
-
   return evaled;
 };
 
-// const createDoc = ({ x, y, w = 200, h = 40 }) => {
-//   const metadata = {
-//     rect: [x, y, w, h],
-//     id: uuid(),
-//     isEditing: false,
-//     code: `return () => <div>widget</div>`
-//   };
-
-//   return { ...metadata, compiled: compileDoc(metadata) };
-// };
-
 const WIDGETS = {
-  RAW: `
+  ["basic preview"]: `
     return ({ doc }) => (
       <pre>{doc}</pre>
     );
   `,
 
-  RAW_EDIT: `
+  ["edit as raw text"]: `
     return ({ doc, change }) => (
       <textarea
         className="m0 bw0 w-100 h-100"
@@ -115,7 +90,7 @@ const createDocWithContent = ({
       contentId,
 
       // display
-      widget: compileDoc(WIDGETS.RAW_EDIT)
+      widget: compileWidget(WIDGETS["basic preview"])
     },
     content: {
       id: contentId,
@@ -126,13 +101,42 @@ const createDocWithContent = ({
 
 class App extends Component {
   state = {
+    // main storage
     docs: {},
     contents: {},
+
+    // ephemeral stuff
     copiedDocId: undefined,
-    dragAdjust: [0, 0]
+    dragAdjust: [0, 0],
+    isWidgetChooserVisible: false,
+    isEditingWidgetCode: false
   };
 
+  componentDidMount() {
+    const { doc, content } = createDocWithContent({
+      x: 100,
+      y: 100,
+      w: 640,
+      h: 200,
+      content: ` Hi!
+
+ - doubleclick to create new doc
+ - ctrl+w to switch widget type
+   - switch to "edit as raw text" to change the content
+   - widgets with the same doc (copied) will update their content
+ - ctrl+c to copy doc
+ - ctrl+v to paste doc
+ - ctrl+d to delete selected doc`
+    });
+
+    this.setState({
+      docs: { [doc.id]: doc },
+      contents: { [content.id]: content }
+    });
+  }
+
   handleKeyEvent = (key, e) => {
+    // copy doc
     if (key === "ctrl+c") {
       const selectedDoc = Object.values(this.state.docs).find(
         d => d.isSelected
@@ -147,6 +151,7 @@ class App extends Component {
       return;
     }
 
+    // paste doc
     if (key === "ctrl+v") {
       if (!this.state.copiedDocId) {
         return;
@@ -162,8 +167,6 @@ class App extends Component {
             contentId: copiedDoc.contentId
           });
 
-          console.log("new doc", doc);
-
           draft.docs[doc.id] = doc;
 
           Object.values(draft.docs).forEach(
@@ -171,6 +174,50 @@ class App extends Component {
           );
         })
       );
+
+      return;
+    }
+
+    // delete doc
+    if (key === "ctrl+backspace" || key === "ctrl+delete" || key === "ctrl+d") {
+      const selectedDoc = Object.values(this.state.docs).find(
+        d => d.isSelected
+      );
+
+      if (!selectedDoc) {
+        return;
+      }
+
+      this.setState(
+        produce(draft => {
+          const { contentId } = selectedDoc;
+
+          delete draft.docs[selectedDoc.id];
+
+          const isContentStillUsed = Object.values(draft.docs).some(
+            d => d.contentId === contentId
+          );
+
+          if (!isContentStillUsed) {
+            delete draft.contents[contentId];
+          }
+        })
+      );
+
+      return;
+    }
+
+    // swap widget on doc
+    if (key === "ctrl+w") {
+      const selectedDoc = Object.values(this.state.docs).find(
+        d => d.isSelected
+      );
+
+      if (!selectedDoc) {
+        return;
+      }
+
+      this.setState({ isWidgetChooserVisible: true });
 
       return;
     }
@@ -302,13 +349,32 @@ class App extends Component {
     );
   };
 
+  handleDocWidgetChange = widgetName => {
+    // chooser can't be visible without selected doc
+    const selectedDoc = Object.values(this.state.docs).find(d => d.isSelected);
+
+    this.setState(
+      produce(draft => {
+        draft.docs[selectedDoc.id].widget = compileWidget(WIDGETS[widgetName]);
+        draft.isWidgetChooserVisible = false;
+      })
+    );
+  };
+
   render() {
-    const isEditingCode = false;
+    const { isWidgetChooserVisible, isEditingWidgetCode } = this.state;
 
     return (
       <div className="min-vh-100 sans-serif flex">
         <KeyboardEventHandler
-          handleKeys={["ctrl+c", "ctrl+v"]}
+          handleKeys={[
+            "ctrl+c",
+            "ctrl+v",
+            "ctrl+w",
+            "ctrl+d",
+            "ctrl+delete",
+            "ctrl+backspace"
+          ]}
           onKeyEvent={this.handleKeyEvent}
         />
 
@@ -369,6 +435,31 @@ class App extends Component {
             );
           })}
         </div>
+
+        {isWidgetChooserVisible && (
+          <div className="absolute absolute--fill bg-black-20">
+            <div
+              className="absolute"
+              style={{
+                left: "50%",
+                top: "50%",
+                transform: "translate(-50%, -50%)"
+              }}
+            >
+              <div className="list pl0 ml0 center mw5 ba b--light-silver br3 bg-white">
+                {Object.keys(WIDGETS).map(name => (
+                  <div
+                    key={name}
+                    className="ph3 pv2 bb b--light-silver"
+                    onClick={e => this.handleDocWidgetChange(name)}
+                  >
+                    {name}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* {isEditingCode && ( */}
         {/*   <div className="w-100 ba b--light-gray"> */}
