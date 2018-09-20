@@ -13,7 +13,7 @@ const babel = require("@babel/standalone");
 window.React = React;
 
 // FIXME: try-catches here are probably overkill, we can clean this up later
-const compileWidget = ({ code }) => {
+const compileDoc = code => {
   let transformed, transformationError;
 
   try {
@@ -49,53 +49,89 @@ const compileWidget = ({ code }) => {
 
   let run, runError;
 
-  try {
-    run = evaled();
-  } catch (e) {
-    runError = e;
-  }
+  // try {
+  //   run = evaled();
+  // } catch (e) {
+  //   runError = e;
+  // }
 
-  if (runError) {
-    return <pre className="red">{runError.toString()}</pre>;
-  }
+  // if (runError) {
+  //   return <pre className="red">{runError.toString()}</pre>;
+  // }
 
-  return run;
+  // console.log({ run })
+
+  return evaled;
 };
 
-const createWidget = ({ x, y, w = 200, h = 40 }) => {
-  const metadata = {
-    rect: [x, y, w, h],
-    id: uuid(),
-    isEditing: false,
-    code: `return () => <div>widget</div>`
-  };
+// const createDoc = ({ x, y, w = 200, h = 40 }) => {
+//   const metadata = {
+//     rect: [x, y, w, h],
+//     id: uuid(),
+//     isEditing: false,
+//     code: `return () => <div>widget</div>`
+//   };
 
-  return { ...metadata, compiled: compileWidget(metadata) };
+//   return { ...metadata, compiled: compileDoc(metadata) };
+// };
+
+const WIDGETS = {
+  RAW: `
+    return ({ doc }) => (
+      <pre>{doc}</pre>
+    );
+  `,
+
+  RAW_EDIT: `
+    return ({ doc, change }) => (
+      <textarea
+        className="m0 b0 w-100 h-100"
+        onChange={e => change(e.target.value)}
+      >
+        {doc}
+      </textarea>
+    )
+  `
+};
+
+const createDocWithContent = ({ x, y, w = 200, h = 40, content = "" }) => {
+  const contentId = uuid();
+
+  return {
+    doc: {
+      // display props
+      id: uuid(),
+      rect: [x, y, w, h],
+      isSelected: true,
+
+      // content id
+      contentId,
+
+      // display
+      widget: compileDoc(WIDGETS.RAW_EDIT)
+    },
+    content: {
+      id: contentId,
+      content
+    }
+  };
 };
 
 class App extends Component {
   state = {
-    widgets: {},
+    docs: {},
+    contents: {},
     dragAdjust: [0, 0]
   };
 
   handleDoubleClick = e => {
-    const anyEditing = Object.values(this.state.widgets).some(
-      widget => widget.isEditing
-    );
-
-    if (anyEditing) {
-      // if we have anything being edited, then double clicks are probably to select text
-      return;
-    }
-
     const [x, y] = [e.pageX, e.pageY];
 
     this.setState(
       produce(draft => {
-        const widget = createWidget({ x, y });
-
-        draft.widgets[widget.id] = widget;
+        const { doc, content } = createDocWithContent({ x, y });
+        draft.docs[doc.id] = doc;
+        draft.contents[content.id] = content;
       })
     );
   };
@@ -103,31 +139,38 @@ class App extends Component {
   handleClickOutside = () => {
     this.setState(
       produce(draft => {
-        const widget = Object.values(draft.widgets).find(
-          widget => widget.isEditing
-        );
-
-        if (!widget) {
-          return;
-        }
-
-        widget.isEditing = false;
+        Object.values(draft.docs).forEach(d => (d.isSelected = false));
       })
     );
   };
 
-  handleWidgetDragStart = (widget, e) => {
-    const [x, y] = [e.pageX, e.pageY];
-    const [wx, wy] = widget.rect;
+  handleDocClick = (doc, e) => {
+    e.stopPropagation();
 
     this.setState(
       produce(draft => {
+        Object.values(draft.docs).forEach(d => {
+          d.isSelected = d.id === doc.id;
+        });
+      })
+    );
+  };
+
+  handleDocDragStart = (doc, e) => {
+    const [x, y] = [e.pageX, e.pageY];
+    const [wx, wy] = doc.rect;
+
+    this.setState(
+      produce(draft => {
+        Object.values(draft.docs).forEach(
+          d => (d.isSelected = d.id === doc.id)
+        );
         draft.dragAdjust = [x - wx, y - wy];
       })
     );
   };
 
-  handleWidgetDrag = (widget, e) => {
+  handleDocDrag = (doc, e) => {
     const [x, y] = [e.pageX, e.pageY];
 
     if (x === 0 && y === 0) {
@@ -137,13 +180,13 @@ class App extends Component {
 
     this.setState(
       produce(draft => {
-        draft.widgets[widget.id].rect[0] = x - draft.dragAdjust[0];
-        draft.widgets[widget.id].rect[1] = y - draft.dragAdjust[1];
+        draft.docs[doc.id].rect[0] = x - draft.dragAdjust[0];
+        draft.docs[doc.id].rect[1] = y - draft.dragAdjust[1];
       })
     );
   };
 
-  handleWidgetDragEnd = (widget, e) => {
+  handleDocDragEnd = (_, e) => {
     this.setState(
       produce(draft => {
         draft.dragAdjust = [0, 0];
@@ -151,42 +194,27 @@ class App extends Component {
     );
   };
 
-  handleWidgetDoubleClick = (widget, e) => {
+  handleDocDoubleClick = (doc, e) => {
     e.stopPropagation();
-
-    this.setState(
-      produce(draft => {
-        draft.widgets[widget.id].isEditing = !draft.widgets[widget.id]
-          .isEditing;
-      })
-    );
   };
 
-  handleWidgetCodeChange = ({ id }, value) => {
-    this.setState(
-      produce(draft => {
-        const widget = draft.widgets[id];
-
-        widget.code = value;
-        widget.compiled = compileWidget(widget);
-      })
-    );
-  };
-
-  handleWidgetResizeDragStart = (widget, e) => {
+  handleDocResizeDragStart = (doc, e) => {
     e.stopPropagation();
 
     const [x, y] = [e.pageX, e.pageY];
-    const [ww, wh] = widget.rect.slice(2);
+    const [ww, wh] = doc.rect.slice(2);
 
     this.setState(
       produce(draft => {
+        Object.values(draft.docs).forEach(
+          d => (d.isSelected = d.id === doc.id)
+        );
         draft.dragAdjust = [x - ww, y - wh];
       })
     );
   };
 
-  handleWidgetResizeDrag = (widget, e) => {
+  handleDocResizeDrag = (doc, e) => {
     e.stopPropagation();
 
     const [x, y] = [e.pageX, e.pageY];
@@ -198,13 +226,13 @@ class App extends Component {
 
     this.setState(
       produce(draft => {
-        draft.widgets[widget.id].rect[2] = x - draft.dragAdjust[0];
-        draft.widgets[widget.id].rect[3] = y - draft.dragAdjust[1];
+        draft.docs[doc.id].rect[2] = x - draft.dragAdjust[0];
+        draft.docs[doc.id].rect[3] = y - draft.dragAdjust[1];
       })
     );
   };
 
-  handleWidgetResizeDragEnd = (widget, e) => {
+  handleDocResizeDragEnd = (_, e) => {
     e.stopPropagation();
 
     this.setState(
@@ -214,12 +242,16 @@ class App extends Component {
     );
   };
 
-  render() {
-    const editingWidget = Object.values(this.state.widgets).find(
-      widget => widget.isEditing
+  handleDocContentChange = (doc, content) => {
+    this.setState(
+      produce(draft => {
+        draft.contents[doc.contentId] = content;
+      })
     );
+  };
 
-    const anyEditing = !!editingWidget;
+  render() {
+    const isEditingCode = false;
 
     return (
       <div className="min-vh-100 sans-serif flex">
@@ -228,29 +260,29 @@ class App extends Component {
           onClick={this.handleClickOutside}
           className="w-100"
         >
-          {Object.values(this.state.widgets).map(widget => {
-            const [x, y, w, h] = widget.rect;
+          {Object.values(this.state.docs).map(doc => {
+            const [x, y, w, h] = doc.rect;
 
-            const widgetDragProps = {
+            const docDragProps = {
               draggable: true,
-              onDragStart: e => this.handleWidgetDragStart(widget, e),
-              onDrag: e => this.handleWidgetDrag(widget, e),
-              onDragEnd: e => this.handleWidgetDragEnd(widget, e)
+              onDragStart: e => this.handleDocDragStart(doc, e),
+              onDrag: e => this.handleDocDrag(doc, e),
+              onDragEnd: e => this.handleDocDragEnd(doc, e)
             };
 
-            const resizeWidgetDragProps = {
+            const resizeDocDragProps = {
               draggable: true,
-              onDragStart: e => this.handleWidgetResizeDragStart(widget, e),
-              onDrag: e => this.handleWidgetResizeDrag(widget, e),
-              onDragEnd: e => this.handleWidgetResizeDragEnd(widget, e)
+              onDragStart: e => this.handleDocResizeDragStart(doc, e),
+              onDrag: e => this.handleDocResizeDrag(doc, e),
+              onDragEnd: e => this.handleDocResizeDragEnd(doc, e)
             };
 
             return (
               <div
-                key={widget.id}
+                key={doc.id}
                 className={`
                   absolute ba
-                  ${widget.isEditing ? "b--red" : "b--light-gray"}
+                  ${doc.isSelected ? "b--red" : "b--light-gray"}
                 `}
                 style={{
                   top: y,
@@ -258,43 +290,42 @@ class App extends Component {
                   width: w,
                   height: h
                 }}
-                onDoubleClick={
-                  widget.isEditing
-                    ? () => {}
-                    : e => this.handleWidgetDoubleClick(widget, e)
-                }
-                {...widgetDragProps}
+                onClick={e => this.handleDocClick(doc, e)}
+                {...docDragProps}
               >
                 <div className="overflow-scroll mw-100 h-100 m0">
-                  {widget.compiled}
+                  {doc.widget({
+                    doc: this.state.contents[doc.contentId].content,
+                    change: content => this.handleDocContentChange(doc, content)
+                  })}
                 </div>
 
                 <div
                   className={`
                     absolute right-0 bottom-0
-                    ${widget.isEditing ? "bg-red" : "bg-light-gray"}
+                    ${doc.isSelected ? "bg-red" : "bg-light-gray"}
                   `}
                   style={{ width: 12, height: 12 }}
-                  {...resizeWidgetDragProps}
+                  {...resizeDocDragProps}
                 />
               </div>
             );
           })}
         </div>
 
-        {anyEditing && (
-          <div className="w-100 ba b--light-gray">
-            <AceEditor
-              mode="jsx"
-              theme="xcode"
-              value={editingWidget.code}
-              tabSize={2}
-              onChange={value =>
-                this.handleWidgetCodeChange(editingWidget, value)
-              }
-            />
-          </div>
-        )}
+        {/* {isEditingCode && ( */}
+        {/*   <div className="w-100 ba b--light-gray"> */}
+        {/*     <AceEditor */}
+        {/*       mode="jsx" */}
+        {/*       theme="xcode" */}
+        {/*       value={editingDoc.code} */}
+        {/*       tabSize={2} */}
+        {/*       onChange={value => */}
+        {/*         this.handleDocCodeChange(editingDoc, value) */}
+        {/*       } */}
+        {/*     /> */}
+        {/*   </div> */}
+        {/* )} */}
       </div>
     );
   }
