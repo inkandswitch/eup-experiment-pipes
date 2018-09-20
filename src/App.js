@@ -33,7 +33,7 @@ const compileWidget = code => {
   }
 
   if (transformationError) {
-    return <pre className="red">{transformationError.toString()}</pre>;
+    return () => <pre className="red">{transformationError.toString()}</pre>;
   }
 
   let evaled, evalError;
@@ -45,7 +45,7 @@ const compileWidget = code => {
   }
 
   if (evalError) {
-    return <pre className="red">{evalError.toString()}</pre>;
+    return () => <pre className="red">{evalError.toString()}</pre>;
   }
 
   return evaled;
@@ -66,6 +66,27 @@ const WIDGETS = {
         value={doc || ""}
       />
     )
+  `,
+
+  ["just a list"]: `
+    return ({ doc, change }) => {
+      const listItems = doc
+        .split("\\n")
+        .filter(line => line.trim().startsWith("-"))
+        .map(line => line.replace("- ", ""));
+
+      return (
+        <div>
+          <ul>
+            {listItems.map(item => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+
+          <div>Number of items on your list: {listItems.length}</div>
+        </div>
+      );
+    }
   `
 };
 
