@@ -2,6 +2,7 @@ import produce from "immer";
 import uuid from "uuid/v4";
 import React, { Component } from "react";
 import AceEditor from "react-ace";
+import KeyboardEventHandler from "react-keyboard-event-handler";
 
 import "brace/mode/javascript";
 import "brace/mode/jsx";
@@ -85,17 +86,23 @@ const WIDGETS = {
   RAW_EDIT: `
     return ({ doc, change }) => (
       <textarea
-        className="m0 b0 w-100 h-100"
+        className="m0 bw0 w-100 h-100"
         onChange={e => change(e.target.value)}
-      >
-        {doc}
-      </textarea>
+        value={doc || ""}
+      />
     )
   `
 };
 
-const createDocWithContent = ({ x, y, w = 200, h = 40, content = "" }) => {
-  const contentId = uuid();
+const createDocWithContent = ({
+  x,
+  y,
+  w = 200,
+  h = 40,
+  content = "",
+  contentId
+}) => {
+  contentId = contentId || uuid();
 
   return {
     doc: {
@@ -121,7 +128,52 @@ class App extends Component {
   state = {
     docs: {},
     contents: {},
+    copiedDocId: undefined,
     dragAdjust: [0, 0]
+  };
+
+  handleKeyEvent = (key, e) => {
+    if (key === "ctrl+c") {
+      const selectedDoc = Object.values(this.state.docs).find(
+        d => d.isSelected
+      );
+
+      if (!selectedDoc) {
+        return;
+      }
+
+      this.setState({ copiedDocId: selectedDoc.id });
+
+      return;
+    }
+
+    if (key === "ctrl+v") {
+      if (!this.state.copiedDocId) {
+        return;
+      }
+
+      this.setState(
+        produce(draft => {
+          const copiedDoc = draft.docs[draft.copiedDocId];
+
+          const { doc } = createDocWithContent({
+            x: copiedDoc.rect[0] + 100,
+            y: copiedDoc.rect[1] + 100,
+            contentId: copiedDoc.contentId
+          });
+
+          console.log("new doc", doc);
+
+          draft.docs[doc.id] = doc;
+
+          Object.values(draft.docs).forEach(
+            d => (d.isSelected = d.id === doc.id)
+          );
+        })
+      );
+
+      return;
+    }
   };
 
   handleDoubleClick = e => {
@@ -245,7 +297,7 @@ class App extends Component {
   handleDocContentChange = (doc, content) => {
     this.setState(
       produce(draft => {
-        draft.contents[doc.contentId] = content;
+        draft.contents[doc.contentId].content = content;
       })
     );
   };
@@ -255,6 +307,11 @@ class App extends Component {
 
     return (
       <div className="min-vh-100 sans-serif flex">
+        <KeyboardEventHandler
+          handleKeys={["ctrl+c", "ctrl+v"]}
+          onKeyEvent={this.handleKeyEvent}
+        />
+
         <div
           onDoubleClick={this.handleDoubleClick}
           onClick={this.handleClickOutside}
