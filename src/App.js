@@ -18,21 +18,15 @@ const compileWidget = code => {
   let transformed, transformationError;
 
   try {
-    transformed = babel.transform(
-      `
-        (function() {
-          ${code}
-        })()
-      `,
-      {
-        presets: ["es2015", "react"]
-      }
-    );
+    transformed = babel.transform(code, {
+      presets: ["es2015", "react"]
+    });
   } catch (e) {
     transformationError = e;
   }
 
   if (transformationError) {
+    console.error(transformationError);
     return () => <pre className="red">{transformationError.toString()}</pre>;
   }
 
@@ -45,58 +39,97 @@ const compileWidget = code => {
   }
 
   if (evalError) {
+    console.error(evalError);
     return () => <pre className="red">{evalError.toString()}</pre>;
   }
 
-  return evaled;
+  return;
 };
 
-const WIDGETS = {
-  ["basic preview"]: `
-    return ({ doc }) => (
-      <pre>{doc}</pre>
-    );
-  `,
+class Widget extends React.Component {
+  change(cb) {
+    this.props.change(cb);
+  }
 
-  ["edit as raw text"]: `
-    return ({ doc, change }) => (
-      <textarea
-        className="m0 bw0 w-100 h-100"
-        onChange={e => change(e.target.value)}
-        value={doc || ""}
-      />
-    )
-  `,
-
-  ["just a list"]: `
-    return ({ doc, change }) => {
-      const listItems = doc
-        .split("\\n")
-        .filter(line => line.trim().startsWith("-"))
-        .map(line => line.replace("- ", ""));
-
+  render() {
+    if (!this.show) {
       return (
         <div>
-          <ul>
-            {listItems.map(item => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-
-          <div>Number of items on your list: {listItems.length}</div>
+          <code>this.show</code> not implemented
         </div>
       );
     }
+
+    return this.show(this.props.doc);
+  }
+}
+window.Widget = Widget;
+
+const WIDGETS = {
+  ["Editable Note"]: `
+    const EditableNoteTypes = {
+      expects: undefined,
+      exposes: "Text"
+    };
+
+    class EditableNote extends Widget {
+      show(doc) {
+        return (
+          <textarea
+            className="m0 bw1 w-100 h-100 b--light-gray"
+            value={doc}
+            onChange={e => {
+              const { value } = e.target;
+
+              this.change(doc => (doc = value));
+            }}
+          />
+        );
+      }
+    }
+
+    Widgets.register("Editable Note", EditableNote, EditableNoteTypes);
+  `,
+
+  ["Text List"]: `
+    const ListTypes = {
+      expects: "Text",
+      exposes: undefined
+    };
+
+    class List extends Widget {
+      show(doc) {
+        const listItems = (doc || "")
+          .split("\\n")
+          .filter(line => line.trim().startsWith("-"))
+          .map(line => line.replace("- ", ""));
+
+        return (
+          <div>
+            <ul>
+              {listItems.map(item => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+
+            <div>Number of items on your list: {listItems.length}</div>
+          </div>
+        );
+      }
+    }
+
+    Widgets.register("Text List", List, ListTypes);
   `
 };
 
 const createDocWithContent = ({
   x,
   y,
-  w = 200,
-  h = 40,
+  w = 300,
+  h = 200,
   content = "",
-  contentId
+  contentId,
+  widget
 }) => {
   contentId = contentId || uuid();
 
@@ -111,8 +144,9 @@ const createDocWithContent = ({
       contentId,
 
       // display
-      widget: compileWidget(WIDGETS["basic preview"])
+      widget
     },
+
     content: {
       id: contentId,
       content
@@ -126,34 +160,36 @@ class App extends Component {
     docs: {},
     contents: {},
 
+    // widgets store
+    widgetSources: WIDGETS,
+    widgetInstances: {},
+    widgetTypes: {},
+
     // ephemeral stuff
     copiedDocId: undefined,
     dragAdjust: [0, 0],
+    widgetDropPosition: [0, 0],
     isWidgetChooserVisible: false,
     isEditingWidgetCode: false
   };
 
   componentDidMount() {
-    const { doc, content } = createDocWithContent({
-      x: 100,
-      y: 100,
-      w: 640,
-      h: 200,
-      content: ` Hi!
+    window.Widgets = {
+      register: (name, code, types) => {
+        this.setState(
+          produce(draft => {
+            draft.widgetInstances[name] = code;
+            draft.widgetTypes[name] = types;
+          })
+        );
+      }
+    };
 
- - doubleclick to create new doc
- - ctrl+w to switch widget type
-   - switch to "edit as raw text" to change the content
-   - widgets with the same doc (copied) will update their content
- - ctrl+c to copy doc
- - ctrl+v to paste doc
- - ctrl+d to delete selected doc`
-    });
+    Object.values(WIDGETS).forEach(code => compileWidget(code));
 
-    this.setState({
-      docs: { [doc.id]: doc },
-      contents: { [content.id]: content }
-    });
+    setTimeout(() => {
+      console.log(this.state);
+    }, 1000);
   }
 
   handleKeyEvent = (key, e) => {
@@ -247,13 +283,10 @@ class App extends Component {
   handleDoubleClick = e => {
     const [x, y] = [e.pageX, e.pageY];
 
-    this.setState(
-      produce(draft => {
-        const { doc, content } = createDocWithContent({ x, y });
-        draft.docs[doc.id] = doc;
-        draft.contents[content.id] = content;
-      })
-    );
+    this.setState({
+      widgetDropPosition: [x, y],
+      isWidgetChooserVisible: true
+    });
   };
 
   handleClickOutside = () => {
@@ -362,24 +395,43 @@ class App extends Component {
     );
   };
 
-  handleDocContentChange = (doc, content) => {
+  handleDocContentChange = (doc, callback) => {
     this.setState(
       produce(draft => {
-        draft.contents[doc.contentId].content = content;
+        draft.contents[doc.contentId].content = callback(
+          draft.contents[doc.contentId].content
+        );
       })
     );
   };
 
-  handleDocWidgetChange = widgetName => {
-    // chooser can't be visible without selected doc
-    const selectedDoc = Object.values(this.state.docs).find(d => d.isSelected);
-
+  handleWidgetCreation = widgetName => {
     this.setState(
       produce(draft => {
-        draft.docs[selectedDoc.id].widget = compileWidget(WIDGETS[widgetName]);
+        const [x, y] = draft.widgetDropPosition;
+
+        const { doc, content } = createDocWithContent({
+          x,
+          y,
+          widget: widgetName
+        });
+
+        draft.docs[doc.id] = doc;
+        draft.contents[content.id] = content;
+
         draft.isWidgetChooserVisible = false;
       })
     );
+  };
+
+  handlePillDragStart = (doc, e) => {
+    e.stopPropagation();
+
+    this.setState({ draggedPillSourceId: doc.id });
+  };
+
+  handleDropPill = (doc, e) => {
+    console.log(doc, this.state.draggedPillSourceId);
   };
 
   render() {
@@ -421,13 +473,20 @@ class App extends Component {
               onDragEnd: e => this.handleDocResizeDragEnd(doc, e)
             };
 
+            const pillExposesDragProps = {
+              draggable: true,
+              onDragStart: e => this.handlePillDragStart(doc, e),
+              onDrag: e => e.stopPropagation(),
+              onDragEnd: e => e.stopPropagation()
+            };
+
+            const border = doc.isSelected ? "b--red" : "b--light-gray";
+            const background = doc.isSelected ? "bg-red" : "bg-light-gray";
+
             return (
               <div
                 key={doc.id}
-                className={`
-                  absolute ba
-                  ${doc.isSelected ? "b--red" : "b--light-gray"}
-                `}
+                className={`absolute ba ${border} flex flex-column`}
                 style={{
                   top: y,
                   left: x,
@@ -437,18 +496,48 @@ class App extends Component {
                 onClick={e => this.handleDocClick(doc, e)}
                 {...docDragProps}
               >
-                <div className="overflow-scroll mw-100 h-100 m0">
-                  {doc.widget({
+                {this.state.widgetTypes[doc.widget].expects && (
+                  <div>
+                    <div className="bg-light-gray pa2 f6">
+                      Expects
+                      <span
+                        className="ml2 pa1 br2 bg-white gray"
+                        onDragOver={e => {
+                          // TODO: highlight if matches
+                          e.stopPropagation();
+                          e.preventDefault();
+                        }}
+                        onDrop={e => this.handleDropPill(doc, e)}
+                      >
+                        {this.state.widgetTypes[doc.widget].expects}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="overflow-scroll h-100 m0 pa2">
+                  {React.createElement(this.state.widgetInstances[doc.widget], {
                     doc: this.state.contents[doc.contentId].content,
-                    change: content => this.handleDocContentChange(doc, content)
+                    change: callback =>
+                      this.handleDocContentChange(doc, callback)
                   })}
                 </div>
 
+                {this.state.widgetTypes[doc.widget].exposes && (
+                  <div className="bg-light-gray pa2 f6">
+                    Exposes
+                    <span
+                      className="ml2 pa1 br2 bg-gray white"
+                      {...{ ["data-doc-id"]: doc.id }}
+                      {...pillExposesDragProps}
+                    >
+                      {this.state.widgetTypes[doc.widget].exposes}
+                    </span>
+                  </div>
+                )}
+
                 <div
-                  className={`
-                    absolute right-0 bottom-0
-                    ${doc.isSelected ? "bg-red" : "bg-light-gray"}
-                  `}
+                  className={`absolute right-0 bottom-0 ${background}`}
                   style={{ width: 12, height: 12 }}
                   {...resizeDocDragProps}
                 />
@@ -468,11 +557,11 @@ class App extends Component {
               }}
             >
               <div className="list pl0 ml0 center mw5 ba b--light-silver br3 bg-white">
-                {Object.keys(WIDGETS).map(name => (
+                {Object.keys(this.state.widgetSources).map(name => (
                   <div
                     key={name}
                     className="ph3 pv2 bb b--light-silver"
-                    onClick={e => this.handleDocWidgetChange(name)}
+                    onClick={e => this.handleWidgetCreation(name)}
                   >
                     {name}
                   </div>
