@@ -3,6 +3,7 @@ import uuid from "uuid/v4";
 import React, { Component } from "react";
 import AceEditor from "react-ace";
 import KeyboardEventHandler from "react-keyboard-event-handler";
+import deepEqual from "deep-equal";
 
 import "brace/mode/javascript";
 import "brace/mode/jsx";
@@ -15,19 +16,19 @@ window.React = React;
 
 // FIXME: try-catches here are probably overkill, we can clean this up later
 const compileWidget = code => {
-  let transformed, transformationError;
+  let transformed, transformatihandleError;
 
   try {
     transformed = babel.transform(code, {
       presets: ["es2015", "react"]
     });
   } catch (e) {
-    transformationError = e;
+    transformatihandleError = e;
   }
 
-  if (transformationError) {
-    console.error(transformationError);
-    return () => <pre className="red">{transformationError.toString()}</pre>;
+  if (transformatihandleError) {
+    console.error(transformatihandleError);
+    return () => <pre className="red">{transformatihandleError.toString()}</pre>;
   }
 
   let evaled, evalError;
@@ -49,6 +50,16 @@ const compileWidget = code => {
 class Widget extends React.Component {
   change(cb) {
     this.props.change(cb);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (
+      this.handleExpectedDocChange &&
+      this.props.expectedDoc &&
+      !deepEqual(this.props.expectedDoc, prevProps.expectedDoc)
+    ) {
+      this.handleExpectedDocChange(this.props.expectedDoc);
+    }
   }
 
   render() {
@@ -91,18 +102,39 @@ const WIDGETS = {
     Widgets.register("Editable Note", EditableNote, EditableNoteTypes);
   `,
 
-  ["Text List"]: `
-    const ListTypes = {
+  ["Text To List"]: `
+    const TextToListTypes = {
       expects: "Text",
-      exposes: undefined
+      exposes: "List"
     };
 
-    class List extends Widget {
-      show(_, doc) {
-        const listItems = (doc || "")
+    class TextToList extends Widget {
+      handleExpectedDocChange(expectedDoc) {
+        const newDoc = (expectedDoc || "")
           .split("\\n")
           .filter(line => line.trim().startsWith("-"))
           .map(line => line.replace("- ", ""));
+
+        this.change(draft => (draft = newDoc));
+      }
+
+      show() {
+        return <div>transforms text to list</div>;
+      }
+    }
+
+    Widgets.register("Text To List", TextToList, TextToListTypes);
+  `,
+
+  ["Pretty List"]: `
+    const PrettyListTypes = {
+      expects: "List",
+      exposes: undefined
+    };
+
+    class PrettyList extends Widget {
+      show(_, doc) {
+        const listItems = doc || [];
 
         return (
           <div>
@@ -118,7 +150,7 @@ const WIDGETS = {
       }
     }
 
-    Widgets.register("Text List", List, ListTypes);
+    Widgets.register("Pretty List", PrettyList, PrettyListTypes);
   `
 };
 
