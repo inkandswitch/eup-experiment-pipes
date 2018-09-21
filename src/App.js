@@ -60,7 +60,7 @@ class Widget extends React.Component {
       );
     }
 
-    return this.show(this.props.doc);
+    return this.show(this.props.doc, this.props.expectedDoc);
   }
 }
 window.Widget = Widget;
@@ -98,7 +98,7 @@ const WIDGETS = {
     };
 
     class List extends Widget {
-      show(doc) {
+      show(_, doc) {
         const listItems = (doc || "")
           .split("\\n")
           .filter(line => line.trim().startsWith("-"))
@@ -142,6 +142,7 @@ const createDocWithContent = ({
 
       // content id
       contentId,
+      expectedContentId: undefined,
 
       // display
       widget
@@ -427,15 +428,22 @@ class App extends Component {
   handlePillDragStart = (doc, e) => {
     e.stopPropagation();
 
-    this.setState({ draggedPillSourceId: doc.id });
+    this.setState({ draggedPillContentId: doc.contentId });
   };
 
   handleDropPill = (doc, e) => {
-    console.log(doc, this.state.draggedPillSourceId);
+    this.setState(
+      produce(draft => {
+        draft.docs[doc.id].expectedContentId = draft.draggedPillContentId;
+        draft.draggedPillSourceId = undefined;
+      })
+    );
   };
 
   render() {
     const { isWidgetChooserVisible, isEditingWidgetCode } = this.state;
+
+    console.log(this.state);
 
     return (
       <div className="min-vh-100 sans-serif flex">
@@ -499,7 +507,12 @@ class App extends Component {
                 {this.state.widgetTypes[doc.widget].expects && (
                   <div>
                     <div className="bg-light-gray pa2 f6">
-                      Expects
+                      <span>
+                        {!!this.state.contents[doc.expectedContentId]
+                          ? "Uses"
+                          : "Expects"}
+                      </span>
+
                       <span
                         className="ml2 pa1 br2 bg-white gray"
                         onDragOver={e => {
@@ -518,6 +531,9 @@ class App extends Component {
                 <div className="overflow-scroll h-100 m0 pa2">
                   {React.createElement(this.state.widgetInstances[doc.widget], {
                     doc: this.state.contents[doc.contentId].content,
+                    expectedDoc: this.state.contents[doc.expectedContentId]
+                      ? this.state.contents[doc.expectedContentId].content
+                      : undefined,
                     change: callback =>
                       this.handleDocContentChange(doc, callback)
                   })}
