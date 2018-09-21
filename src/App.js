@@ -1,9 +1,11 @@
-import produce from "immer";
-import uuid from "uuid/v4";
-import React, { Component } from "react";
 import AceEditor from "react-ace";
 import KeyboardEventHandler from "react-keyboard-event-handler";
+import React, { Component } from "react";
+import crypto from "crypto";
 import deepEqual from "deep-equal";
+import produce from "immer";
+import uuid from "uuid/v4";
+import { debounce } from "lodash";
 
 import "brace/mode/javascript";
 import "brace/mode/jsx";
@@ -11,24 +13,32 @@ import "brace/theme/xcode";
 
 const babel = require("@babel/standalone");
 
+const md5 = str =>
+  crypto
+    .createHash("md5")
+    .update(str)
+    .digest("hex");
+
 // HACK: save react as window global so we can eval babel
 window.React = React;
 
 // FIXME: try-catches here are probably overkill, we can clean this up later
 const compileWidget = code => {
-  let transformed, transformatihandleError;
+  let transformed, transformError;
 
   try {
-    transformed = babel.transform(code, {
-      presets: ["es2015", "react"]
+    transformed = babel.transform(`(function() { ${code} })()`, {
+      presets: ["es2015", "react"],
+      plugins: ["proposal-class-properties"]
     });
   } catch (e) {
-    transformatihandleError = e;
+    transformError = e;
   }
 
-  if (transformatihandleError) {
-    console.error(transformatihandleError);
-    return () => <pre className="red">{transformatihandleError.toString()}</pre>;
+  if (transformError) {
+    console.error(transformError);
+
+    return () => <pre className="red">{transformError.toString()}</pre>;
   }
 
   let evaled, evalError;
@@ -41,13 +51,16 @@ const compileWidget = code => {
 
   if (evalError) {
     console.error(evalError);
+
     return () => <pre className="red">{evalError.toString()}</pre>;
   }
 
-  return;
+  return evaled;
 };
 
 class Widget extends React.Component {
+  state = { error: undefined };
+
   change(cb) {
     this.props.change(cb);
   }
@@ -83,12 +96,15 @@ const WIDGETS = {
       exposes: "Text"
     };
 
-    class EditableNote extends Widget {
+    return class EditableNote extends Widget {
+      static types = EditableNoteTypes;
+
       show(doc) {
         return (
           <textarea
             className="m0 bw1 w-100 h-100 b--light-gray"
             value={doc}
+            style=""
             onChange={e => {
               const { value } = e.target;
 
@@ -98,8 +114,6 @@ const WIDGETS = {
         );
       }
     }
-
-    Widgets.register("Editable Note", EditableNote, EditableNoteTypes);
   `,
 
   ["Text To List"]: `
@@ -108,7 +122,9 @@ const WIDGETS = {
       exposes: "List"
     };
 
-    class TextToList extends Widget {
+    return class TextToList extends Widget {
+      static types = TextToListTypes;
+
       handleExpectedDocChange(expectedDoc) {
         const newDoc = (expectedDoc || "")
           .split("\\n")
@@ -118,12 +134,12 @@ const WIDGETS = {
         this.change(draft => (draft = newDoc));
       }
 
-      show() {
-        return <div>transforms text to list</div>;
+      show(doc) {
+        return doc && doc.length
+          ? <div>transformed lines: {doc.length}</div>
+          : <div>transforms text to list</div>;
       }
     }
-
-    Widgets.register("Text To List", TextToList, TextToListTypes);
   `,
 
   ["Pretty List"]: `
@@ -132,7 +148,9 @@ const WIDGETS = {
       exposes: undefined
     };
 
-    class PrettyList extends Widget {
+    return class PrettyList extends Widget {
+      static types = PrettyListTypes;
+
       show(_, doc) {
         const listItems = doc || [];
 
@@ -149,8 +167,6 @@ const WIDGETS = {
         );
       }
     }
-
-    Widgets.register("Pretty List", PrettyList, PrettyListTypes);
   `
 };
 
@@ -187,6 +203,24 @@ const createDocWithContent = ({
   };
 };
 
+class TryCatch extends React.Component {
+  state = {
+    error: undefined
+  };
+
+  componentDidCatch(error, info) {
+    this.setState({ error });
+  }
+
+  render() {
+    if (this.state.error) {
+      return <pre className="red">{this.state.error.toString()}</pre>;
+    }
+
+    return this.props.children;
+  }
+}
+
 class App extends Component {
   state = {
     // main storage
@@ -196,36 +230,52 @@ class App extends Component {
     // widgets store
     widgetSources: WIDGETS,
     widgetInstances: {},
-    widgetTypes: {},
 
     // ephemeral stuff
     copiedDocId: undefined,
     dragAdjust: [0, 0],
     widgetDropPosition: [0, 0],
     isWidgetChooserVisible: false,
-    isEditingWidgetCode: false
+    editingWidgetCodeName: undefined
   };
 
   componentDidMount() {
-    window.Widgets = {
-      register: (name, code, types) => {
-        this.setState(
-          produce(draft => {
-            draft.widgetInstances[name] = code;
-            draft.widgetTypes[name] = types;
-          })
-        );
-      }
-    };
+    const compiledWidgets = Object.entries(WIDGETS).reduce(
+      (memo, [key, code]) => ({ ...memo, [key]: compileWidget(code) }),
+      {}
+    );
 
-    Object.values(WIDGETS).forEach(code => compileWidget(code));
+    this.setState({ widgetInstances: compiledWidgets });
 
-    setTimeout(() => {
-      console.log(this.state);
+    this.debouncedCompile = debounce(widgetName => {
+      this.setState(
+        produce(draft => {
+          const source = draft.widgetSources[widgetName];
+
+          draft.widgetInstances[widgetName] = compileWidget(source);
+          draft.widgetInstances[widgetName].hash = md5(source);
+        })
+      );
     }, 1000);
   }
 
   handleKeyEvent = (key, e) => {
+    // edit code
+    if (key === "ctrl+e") {
+      const selectedDoc = Object.values(this.state.docs).find(
+        d => d.isSelected
+      );
+
+      if (!selectedDoc) {
+        this.setState({ editingWidgetCodeName: undefined });
+        return;
+      }
+
+      this.setState({ editingWidgetCodeName: selectedDoc.widget });
+
+      return;
+    }
+
     // copy doc
     if (key === "ctrl+c") {
       const selectedDoc = Object.values(this.state.docs).find(
@@ -293,21 +343,6 @@ class App extends Component {
           }
         })
       );
-
-      return;
-    }
-
-    // swap widget on doc
-    if (key === "ctrl+w") {
-      const selectedDoc = Object.values(this.state.docs).find(
-        d => d.isSelected
-      );
-
-      if (!selectedDoc) {
-        return;
-      }
-
-      this.setState({ isWidgetChooserVisible: true });
 
       return;
     }
@@ -412,8 +447,8 @@ class App extends Component {
 
     this.setState(
       produce(draft => {
-        draft.docs[doc.id].rect[2] = x - draft.dragAdjust[0];
-        draft.docs[doc.id].rect[3] = y - draft.dragAdjust[1];
+        draft.docs[doc.id].rect[2] = Math.max(200, x - draft.dragAdjust[0]);
+        draft.docs[doc.id].rect[3] = Math.max(100, y - draft.dragAdjust[1]);
       })
     );
   };
@@ -472,18 +507,30 @@ class App extends Component {
     );
   };
 
-  render() {
-    const { isWidgetChooserVisible, isEditingWidgetCode } = this.state;
+  handleWidgetCodeChange = (widgetName, value) => {
+    this.setState(
+      produce(draft => {
+        draft.widgetSources[widgetName] = value;
+      })
+    );
 
-    console.log(this.state);
+    this.debouncedCompile(widgetName);
+  };
+
+  render() {
+    const { isWidgetChooserVisible, editingWidgetCodeName } = this.state;
+
+    const editingCode = editingWidgetCodeName
+      ? this.state.widgetSources[editingWidgetCodeName]
+      : "";
 
     return (
       <div className="min-vh-100 sans-serif flex">
         <KeyboardEventHandler
           handleKeys={[
+            "ctrl+e",
             "ctrl+c",
             "ctrl+v",
-            "ctrl+w",
             "ctrl+d",
             "ctrl+delete",
             "ctrl+backspace"
@@ -523,10 +570,15 @@ class App extends Component {
             const border = doc.isSelected ? "b--red" : "b--light-gray";
             const background = doc.isSelected ? "bg-red" : "bg-light-gray";
 
+            const types = this.state.widgetInstances[doc.widget].types || {
+              expects: undefined,
+              exposes: undefined
+            };
+
             return (
               <div
                 key={doc.id}
-                className={`absolute ba ${border} flex flex-column`}
+                className={`absolute ba ${border} flex flex-column bg-white`}
                 style={{
                   top: y,
                   left: x,
@@ -536,7 +588,7 @@ class App extends Component {
                 onClick={e => this.handleDocClick(doc, e)}
                 {...docDragProps}
               >
-                {this.state.widgetTypes[doc.widget].expects && (
+                {types.expects && (
                   <div>
                     <div className="bg-light-gray pa2 f6">
                       <span>
@@ -554,24 +606,29 @@ class App extends Component {
                         }}
                         onDrop={e => this.handleDropPill(doc, e)}
                       >
-                        {this.state.widgetTypes[doc.widget].expects}
+                        {types.expects}
                       </span>
                     </div>
                   </div>
                 )}
 
                 <div className="overflow-scroll h-100 m0 pa2">
-                  {React.createElement(this.state.widgetInstances[doc.widget], {
-                    doc: this.state.contents[doc.contentId].content,
-                    expectedDoc: this.state.contents[doc.expectedContentId]
-                      ? this.state.contents[doc.expectedContentId].content
-                      : undefined,
-                    change: callback =>
-                      this.handleDocContentChange(doc, callback)
-                  })}
+                  <TryCatch key={this.state.widgetInstances[doc.widget].hash}>
+                    {React.createElement(
+                      this.state.widgetInstances[doc.widget],
+                      {
+                        doc: this.state.contents[doc.contentId].content,
+                        expectedDoc: this.state.contents[doc.expectedContentId]
+                          ? this.state.contents[doc.expectedContentId].content
+                          : undefined,
+                        change: callback =>
+                          this.handleDocContentChange(doc, callback)
+                      }
+                    )}
+                  </TryCatch>
                 </div>
 
-                {this.state.widgetTypes[doc.widget].exposes && (
+                {types.exposes && (
                   <div className="bg-light-gray pa2 f6">
                     Exposes
                     <span
@@ -579,7 +636,7 @@ class App extends Component {
                       {...{ ["data-doc-id"]: doc.id }}
                       {...pillExposesDragProps}
                     >
-                      {this.state.widgetTypes[doc.widget].exposes}
+                      {types.exposes}
                     </span>
                   </div>
                 )}
@@ -619,19 +676,19 @@ class App extends Component {
           </div>
         )}
 
-        {/* {isEditingCode && ( */}
-        {/*   <div className="w-100 ba b--light-gray"> */}
-        {/*     <AceEditor */}
-        {/*       mode="jsx" */}
-        {/*       theme="xcode" */}
-        {/*       value={editingDoc.code} */}
-        {/*       tabSize={2} */}
-        {/*       onChange={value => */}
-        {/*         this.handleDocCodeChange(editingDoc, value) */}
-        {/*       } */}
-        {/*     /> */}
-        {/*   </div> */}
-        {/* )} */}
+        {!!editingWidgetCodeName && (
+          <div className="w-100 ba b--light-gray bg-white z-1">
+            <AceEditor
+              mode="jsx"
+              theme="xcode"
+              value={editingCode}
+              tabSize={2}
+              onChange={value => {
+                this.handleWidgetCodeChange(editingWidgetCodeName, value);
+              }}
+            />
+          </div>
+        )}
       </div>
     );
   }
