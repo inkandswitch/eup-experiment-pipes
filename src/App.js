@@ -273,10 +273,14 @@ class App extends Component {
     copiedDocId: undefined,
     dragAdjust: [0, 0],
     widgetDropPosition: [0, 0],
+
     isWidgetChooserVisible: false,
     isWidgetNameInputVisible: false,
     editingWidgetCodeName: undefined,
-    tempWidgetName: ""
+    tempWidgetName: "",
+
+    draggedPillContentId: undefined,
+    draggedPillDocId: undefined
   };
 
   componentDidMount() {
@@ -551,14 +555,18 @@ class App extends Component {
   handlePillDragStart = (doc, e) => {
     e.stopPropagation();
 
-    this.setState({ draggedPillContentId: doc.contentId });
+    this.setState({
+      draggedPillContentId: doc.contentId,
+      draggedPillDocId: doc.id
+    });
   };
 
   handleDropPill = (doc, e) => {
     this.setState(
       produce(draft => {
         draft.docs[doc.id].expectedContentId = draft.draggedPillContentId;
-        draft.draggedPillSourceId = undefined;
+        draft.draggedPillContentId = undefined;
+        draft.draggedPillDocId = undefined;
       })
     );
   };
@@ -635,6 +643,13 @@ class App extends Component {
               exposes: undefined
             };
 
+            const draggedDocId = this.state.draggedPillDocId;
+            const draggedExposedType = !!this.state.draggedPillDocId
+              ? this.state.widgetInstances[
+                  this.state.docs[this.state.draggedPillDocId].widget
+                ].types.exposes
+              : undefined;
+
             return (
               <div
                 key={doc.id}
@@ -659,12 +674,14 @@ class App extends Component {
 
                       <span
                         className="ml2 pa1 br2 bg-white gray"
-                        onDragOver={e => {
-                          // TODO: highlight if matches
-                          e.stopPropagation();
-                          e.preventDefault();
-                        }}
-                        onDrop={e => this.handleDropPill(doc, e)}
+                        {...draggedExposedType === types.expects &&
+                          draggedDocId !== doc.id && {
+                            onDragOver: e => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                            },
+                            onDrop: e => this.handleDropPill(doc, e)
+                          }}
                       >
                         {types.expects}
                       </span>
