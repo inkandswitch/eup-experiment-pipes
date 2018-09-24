@@ -89,6 +89,23 @@ class Widget extends React.Component {
 }
 window.Widget = Widget;
 
+const EMPTY_WIDGET = `
+const MyWidgetTypes = {
+  expects: undefined,
+  exposes: undefined
+};
+
+return class MyWidget extends Widget {
+  static types = MyWidgetTypes;
+
+  show() {
+    return (
+      <h1>Edit Me!</h1>
+    );
+  }
+}
+`;
+
 const WIDGETS = {
   ["Editable Note"]: `
     const EditableNoteTypes = {
@@ -104,7 +121,6 @@ const WIDGETS = {
           <textarea
             className="m0 bw1 w-100 h-100 b--light-gray"
             value={doc}
-            style=""
             onChange={e => {
               const { value } = e.target;
 
@@ -221,6 +237,28 @@ class TryCatch extends React.Component {
   }
 }
 
+const Overlay = ({ children, onClick }) => (
+  <div
+    className="absolute absolute--fill bg-black-20"
+    onClick={e => {
+      if (onClick) {
+        onClick(e);
+      }
+    }}
+  >
+    <div
+      className="absolute"
+      style={{
+        left: "50%",
+        top: "50%",
+        transform: "translate(-50%, -50%)"
+      }}
+    >
+      {children}
+    </div>
+  </div>
+);
+
 class App extends Component {
   state = {
     // main storage
@@ -236,7 +274,9 @@ class App extends Component {
     dragAdjust: [0, 0],
     widgetDropPosition: [0, 0],
     isWidgetChooserVisible: false,
-    editingWidgetCodeName: undefined
+    isWidgetNameInputVisible: false,
+    editingWidgetCodeName: undefined,
+    tempWidgetName: ""
   };
 
   componentDidMount() {
@@ -474,22 +514,38 @@ class App extends Component {
   };
 
   handleWidgetCreation = widgetName => {
-    this.setState(
-      produce(draft => {
-        const [x, y] = draft.widgetDropPosition;
+    if (!widgetName) {
+      this.setState({
+        isWidgetNameInputVisible: true,
+        isWidgetChooserVisible: false
+      });
+    } else {
+      this.setState(
+        produce(draft => {
+          if (!draft.widgetSources[widgetName]) {
+            // we don't have a source for this widget, so we need to make a new one
+            draft.widgetSources[widgetName] = EMPTY_WIDGET;
+            draft.widgetInstances[widgetName] = compileWidget(EMPTY_WIDGET);
+            draft.widgetInstances[widgetName].hash = md5(EMPTY_WIDGET);
+          }
 
-        const { doc, content } = createDocWithContent({
-          x,
-          y,
-          widget: widgetName
-        });
+          const [x, y] = draft.widgetDropPosition;
 
-        draft.docs[doc.id] = doc;
-        draft.contents[content.id] = content;
+          const { doc, content } = createDocWithContent({
+            x,
+            y,
+            widget: widgetName
+          });
 
-        draft.isWidgetChooserVisible = false;
-      })
-    );
+          draft.docs[doc.id] = doc;
+          draft.contents[content.id] = content;
+
+          draft.isWidgetChooserVisible = false;
+          draft.isWidgetNameInputVisible = false;
+          draft.tempWidgetName = "";
+        })
+      );
+    }
   };
 
   handlePillDragStart = (doc, e) => {
@@ -518,7 +574,11 @@ class App extends Component {
   };
 
   render() {
-    const { isWidgetChooserVisible, editingWidgetCodeName } = this.state;
+    const {
+      isWidgetChooserVisible,
+      isWidgetNameInputVisible,
+      editingWidgetCodeName
+    } = this.state;
 
     const editingCode = editingWidgetCodeName
       ? this.state.widgetSources[editingWidgetCodeName]
@@ -541,7 +601,7 @@ class App extends Component {
         <div
           onDoubleClick={this.handleDoubleClick}
           onClick={this.handleClickOutside}
-          className="w-100"
+          className="w-100 relative"
         >
           {Object.values(this.state.docs).map(doc => {
             const [x, y, w, h] = doc.rect;
@@ -649,17 +709,10 @@ class App extends Component {
               </div>
             );
           })}
-        </div>
 
-        {isWidgetChooserVisible && (
-          <div className="absolute absolute--fill bg-black-20">
-            <div
-              className="absolute"
-              style={{
-                left: "50%",
-                top: "50%",
-                transform: "translate(-50%, -50%)"
-              }}
+          {isWidgetChooserVisible && (
+            <Overlay
+              onClick={() => this.setState({ isWidgetChooserVisible: false })}
             >
               <div className="list pl0 ml0 center mw5 ba b--light-silver br3 bg-white">
                 {Object.keys(this.state.widgetSources).map(name => (
@@ -672,9 +725,44 @@ class App extends Component {
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-        )}
+
+              <div className="list pl0 ml0 center mw5 ba b--light-silver br3 bg-white mt2">
+                <div
+                  className="ph3 pv2 bb b--light-silver"
+                  onClick={e => this.handleWidgetCreation()}
+                >
+                  Create New...
+                </div>
+              </div>
+            </Overlay>
+          )}
+
+          {isWidgetNameInputVisible && (
+            <Overlay
+              onClick={() => this.setState({ isWidgetNameInputVisible: false })}
+            >
+              <div className="list pl0 ml0 center mw5 ba b--light-silver br3 bg-white">
+                <input
+                  className="ph3 pv2 b0"
+                  placeholder="My Widget"
+                  value={this.state.tempWidgetName}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e =>
+                    this.setState({ tempWidgetName: e.target.value })
+                  }
+                />
+                <div
+                  className="ph3 pv2 bb b--light-silver"
+                  onClick={e =>
+                    this.handleWidgetCreation(this.state.tempWidgetName)
+                  }
+                >
+                  Create
+                </div>
+              </div>
+            </Overlay>
+          )}
+        </div>
 
         {!!editingWidgetCodeName && (
           <div className="w-100 ba b--light-gray bg-white z-1">
