@@ -13,6 +13,8 @@ import "brace/theme/xcode";
 
 const babel = require("@babel/standalone");
 
+const COLORS = ["purple", "dark-green", "dark-blue", "yellow", "hot-pink"];
+
 const md5 = str =>
   crypto
     .createHash("md5")
@@ -132,57 +134,61 @@ const WIDGETS = {
     }
   `,
 
-  ["Text To List"]: `
-    const TextToListTypes = {
+  ["Table"]: `
+    const TableTypes = {
       expects: "Text",
-      exposes: "List"
+      exposes: "Table"
     };
 
-    return class TextToList extends Widget {
-      static types = TextToListTypes;
+    return class Table extends Widget {
+      static types = TableTypes;
 
       handleExpectedDocChange(expectedDoc) {
         const newDoc = (expectedDoc || "")
           .split("\\n")
-          .filter(line => line.trim().startsWith("-"))
-          .map(line => line.replace("- ", ""));
+          .filter(line => line.length > 0)
+          .map(line => line.split(",").map(text => text.trim()));
 
         this.change(draft => (draft = newDoc));
       }
 
       show(doc) {
-        return doc && doc.length
-          ? <div>transformed lines: {doc.length}</div>
-          : <div>transforms text to list</div>;
+        if (!Array.isArray(doc)) {
+          return null;
+        }
+
+        return <table className="collapse ba br2 b--black-10 pa3">
+          <tbody>
+            {doc.map(column => (
+              <tr key={column} className="striped--near-white ">
+                {column.map(row => (
+                  <td key={row} className="pa2">
+                    {row}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       }
-    }
+    };
   `,
 
-  ["Pretty List"]: `
-    const PrettyListTypes = {
-      expects: "List",
+  ["Word Count"]: `
+    const WordCountTypes = {
+      expects: "Text",
       exposes: undefined
     };
 
-    return class PrettyList extends Widget {
-      static types = PrettyListTypes;
+    return class WordCount extends Widget {
+      static types = WordCountTypes;
 
       show(_, doc) {
-        const listItems = doc || [];
-
-        return (
-          <div>
-            <ul>
-              {listItems.map(item => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-
-            <div>Number of items on your list: {listItems.length}</div>
-          </div>
-        );
+        return <div>
+          Word Count: {doc ? doc.split(" ").length : 0}
+        </div>
       }
-    }
+    };
   `
 };
 
@@ -599,6 +605,43 @@ class App extends Component {
       ? this.state.widgetSources[editingWidgetCodeName]
       : "";
 
+    const docGroups = Object.values(this.state.docs)
+      .reduce((memo, { contentId, expectedContentId }) => {
+        if (!expectedContentId) {
+          return memo;
+        }
+
+        const matching = memo.find(
+          s => s.has(expectedContentId) || s.has(contentId)
+        );
+
+        if (matching) {
+          matching.add(contentId);
+          matching.add(expectedContentId);
+
+          return memo;
+        }
+
+        memo.push(new Set([expectedContentId, contentId]));
+
+        return memo;
+      }, [])
+      .map(s =>
+        [...s]
+          .map(id =>
+            Object.values(this.state.docs).find(
+              ({ contentId }) => contentId === id
+            )
+          )
+          .filter(_ => !!_)
+          .map(({ id }) => id)
+      );
+
+    const docToGroupIdx = docGroups.reduce((memo, docIds, idx) => {
+      docIds.forEach(docId => (memo[docId] = idx));
+      return memo;
+    }, {});
+
     return (
       <div className="min-vh-100 sans-serif flex">
         <KeyboardEventHandler
@@ -642,7 +685,14 @@ class App extends Component {
               onDragEnd: e => this.handlePillDragEnd(doc, e)
             };
 
-            const border = doc.isSelected ? "b--red" : "b--light-gray";
+            const groupIdx = docToGroupIdx[doc.id];
+
+            const border = doc.isSelected
+              ? "b--red"
+              : groupIdx !== undefined && COLORS[groupIdx]
+                ? `b--${COLORS[groupIdx]}`
+                : "b--light-gray";
+
             const background = doc.isSelected ? "bg-red" : "bg-light-gray";
 
             const types = this.state.widgetInstances[doc.widget].types || {
@@ -802,6 +852,8 @@ class App extends Component {
               theme="xcode"
               value={editingCode}
               tabSize={2}
+              height="100%"
+              width="100%"
               onChange={value => {
                 this.handleWidgetCodeChange(editingWidgetCodeName, value);
               }}
