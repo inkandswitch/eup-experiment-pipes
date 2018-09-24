@@ -5,7 +5,7 @@ import crypto from "crypto";
 import deepEqual from "deep-equal";
 import produce from "immer";
 import uuid from "uuid/v4";
-import { debounce } from "lodash";
+import { debounce, get } from "lodash";
 
 import "brace/mode/javascript";
 import "brace/mode/jsx";
@@ -122,11 +122,16 @@ const WIDGETS = {
         return (
           <textarea
             className="m0 bw1 w-100 h-100 b--light-gray"
-            value={doc}
+            value={doc ? doc.exposes : ""}
             onChange={e => {
               const { value } = e.target;
 
-              this.change(doc => (doc = value));
+              this.change(doc => {
+                if (!doc) { doc = {}; }
+
+                doc.exposes = value;
+                return doc;
+              });
             }}
           />
         );
@@ -149,17 +154,22 @@ const WIDGETS = {
           .filter(line => line.length > 0)
           .map(line => line.split(",").map(text => text.trim()));
 
-        this.change(draft => (draft = newDoc));
+        this.change(doc => {
+          if (!doc) { doc = {}; }
+
+          doc.exposes = newDoc
+          return doc;
+        });
       }
 
       show(doc) {
-        if (!Array.isArray(doc)) {
+        if (!doc || !Array.isArray(doc.exposes)) {
           return null;
         }
 
         return <table className="collapse ba br2 b--black-10 pa3">
           <tbody>
-            {doc.map(column => (
+            {doc.exposes.map(column => (
               <tr key={column} className="striped--near-white ">
                 {column.map(row => (
                   <td key={row} className="pa2">
@@ -197,7 +207,7 @@ const createDocWithContent = ({
   y,
   w = 300,
   h = 200,
-  content = "",
+  content,
   contentId,
   widget
 }) => {
@@ -710,7 +720,7 @@ class App extends Component {
             return (
               <div
                 key={doc.id}
-                className={`absolute ba ${border} flex flex-column bg-white`}
+                className={`absolute ba bw1 ${border} flex flex-column bg-white`}
                 style={{
                   top: y,
                   left: x,
@@ -759,9 +769,11 @@ class App extends Component {
                       this.state.widgetInstances[doc.widget],
                       {
                         doc: this.state.contents[doc.contentId].content,
-                        expectedDoc: this.state.contents[doc.expectedContentId]
-                          ? this.state.contents[doc.expectedContentId].content
-                          : undefined,
+                        expectedDoc: get(
+                          this.state.contents,
+                          [doc.expectedContentId, "content", "exposes"],
+                          undefined
+                        ),
                         change: callback =>
                           this.handleDocContentChange(doc, callback)
                       }
