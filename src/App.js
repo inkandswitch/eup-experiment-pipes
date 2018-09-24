@@ -71,9 +71,10 @@ class Widget extends React.Component {
     if (
       this.handleExpectedDocChange &&
       this.props.expectedDoc &&
-      !deepEqual(this.props.expectedDoc, prevProps.expectedDoc)
+      (!deepEqual(this.props.doc, prevProps.doc) ||
+        !deepEqual(this.props.expectedDoc, prevProps.expectedDoc))
     ) {
-      this.handleExpectedDocChange(this.props.expectedDoc);
+      this.handleExpectedDocChange(this.props.doc, this.props.expectedDoc);
     }
   }
 
@@ -109,7 +110,7 @@ return class MyWidget extends Widget {
 `;
 
 const WIDGETS = {
-  ["Editable Note"]: `
+  "Editable Note": `
     const EditableNoteTypes = {
       expects: undefined,
       exposes: "Text"
@@ -139,7 +140,7 @@ const WIDGETS = {
     }
   `,
 
-  ["Table"]: `
+  Table: `
     const TableTypes = {
       expects: "Text",
       exposes: "Table"
@@ -148,7 +149,7 @@ const WIDGETS = {
     return class Table extends Widget {
       static types = TableTypes;
 
-      handleExpectedDocChange(expectedDoc) {
+      handleExpectedDocChange(_, expectedDoc) {
         const newDoc = (expectedDoc || "")
           .split("\\n")
           .filter(line => line.length > 0)
@@ -157,7 +158,7 @@ const WIDGETS = {
         this.change(doc => {
           if (!doc) { doc = {}; }
 
-          doc.exposes = newDoc
+          doc.exposes = newDoc;
           return doc;
         });
       }
@@ -184,7 +185,120 @@ const WIDGETS = {
     };
   `,
 
-  ["Word Count"]: `
+  List: `
+    const ListTypes = {
+      expects: "Text",
+      exposes: "List"
+    };
+
+    return class List extends Widget {
+      static types = ListTypes;
+
+      handleExpectedDocChange(_, expectedDoc) {
+        const newDoc = (expectedDoc || "")
+          .split("\\n")
+          .map(line => line.trim())
+          .filter(line => line.startsWith("* ") || line.startsWith("- "))
+          .map(line => line.replace("* ", "").replace("- ", ""));
+
+        this.change(doc => {
+          if (!doc) { doc = {}; }
+
+          doc.exposes = newDoc;
+          return doc;
+        });
+      }
+
+      show(doc) {
+        if (!doc || !Array.isArray(doc.exposes)) {
+          return null;
+        }
+
+        return <ul>
+          {doc.exposes.map(item => (
+            <li key={item}>
+              {item}
+            </li>
+          ))}
+        </ul>
+      }
+    };
+  `,
+
+  Grep: `
+    const GrepTypes = {
+      expects: "Text",
+      exposes: "Text"
+    };
+
+    return class Grep extends Widget {
+      static types = GrepTypes;
+
+      handleExpectedDocChange(doc, expectedDoc) {
+        const hasGrep = doc && doc.grep && doc.grep.length > 0;
+
+        if (!hasGrep) {
+          this.change(doc => {
+            if (!doc) { doc = {}; }
+
+            doc.exposes = expectedDoc || "";
+            return doc;
+          });
+
+          return;
+        }
+
+        let reg;
+
+        try {
+          reg = new RegExp(doc.grep);
+        }
+        catch(e) {
+          console.log(e);
+        }
+
+        const newDoc = (expectedDoc || "")
+          .split("\\n")
+          .filter(line => reg ? line.match(reg) : true)
+          .join("\\n");
+
+        this.change(doc => {
+          if (!doc) { doc = {}; }
+
+          doc.exposes = newDoc;
+          return doc;
+        });
+      }
+
+      show(doc) {
+        return <div>
+          <div className="mb2">
+            <input
+              className="p2 w-100 code f6"
+              placeholder="Regular Expression"
+              value={doc ? (doc.grep || "") : ""}
+              onChange={e => {
+                const { value } = e.target;
+
+                this.change(doc => {
+                  if (!doc) { doc = {}; }
+
+                  doc.grep = value;
+                  return doc;
+                })
+              }}
+            />
+          </div>
+
+          <pre className="sans-serif">
+            {doc && doc.exposes}
+          </pre>
+        </div>
+      }
+    };
+  `,
+
+  "Word Count": `
     const WordCountTypes = {
       expects: "Text",
       exposes: undefined
@@ -786,7 +900,7 @@ class App extends Component {
                     Exposes
                     <span
                       className="ml2 pa1 br2 bg-gray white"
-                      {...{ ["data-doc-id"]: doc.id }}
+                      {...{ "data-doc-id": doc.id }}
                       {...pillExposesDragProps}
                     >
                       {types.exposes}
