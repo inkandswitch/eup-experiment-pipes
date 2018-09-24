@@ -561,12 +561,19 @@ class App extends Component {
     });
   };
 
+  handlePillDragEnd = (doc, e) => {
+    e.stopPropagation();
+
+    this.setState({
+      draggedPillContentId: undefined,
+      draggedPillDocId: undefined
+    });
+  };
+
   handleDropPill = (doc, e) => {
     this.setState(
       produce(draft => {
         draft.docs[doc.id].expectedContentId = draft.draggedPillContentId;
-        draft.draggedPillContentId = undefined;
-        draft.draggedPillDocId = undefined;
       })
     );
   };
@@ -632,7 +639,7 @@ class App extends Component {
               draggable: true,
               onDragStart: e => this.handlePillDragStart(doc, e),
               onDrag: e => e.stopPropagation(),
-              onDragEnd: e => e.stopPropagation()
+              onDragEnd: e => this.handlePillDragEnd(doc, e)
             };
 
             const border = doc.isSelected ? "b--red" : "b--light-gray";
@@ -673,7 +680,14 @@ class App extends Component {
                       </span>
 
                       <span
-                        className="ml2 pa1 br2 bg-white gray"
+                        className={`
+                          ml2 pa1 br2
+                          ${
+                            draggedExposedType === types.expects
+                              ? "bg-light-blue white"
+                              : "bg-white gray"
+                          }
+                        `}
                         {...draggedExposedType === types.expects &&
                           draggedDocId !== doc.id && {
                             onDragOver: e => {
