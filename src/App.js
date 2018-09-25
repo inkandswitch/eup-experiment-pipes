@@ -106,214 +106,212 @@ return class MyWidget extends Widget {
       <h1>Edit Me!</h1>
     );
   }
-}
-`;
+}`;
 
 const WIDGETS = {
   "Editable Note": `
-    const EditableNoteTypes = {
-      expects: undefined,
-      exposes: "Text"
-    };
+const EditableNoteTypes = {
+  expects: undefined,
+  exposes: "Text"
+};
 
-    return class EditableNote extends Widget {
-      static types = EditableNoteTypes;
+return class EditableNote extends Widget {
+  static types = EditableNoteTypes;
 
-      show(doc) {
-        return (
-          <textarea
-            className="m0 bw1 w-100 h-100 b--light-gray"
-            value={doc ? doc.exposes : ""}
-            onChange={e => {
-              const { value } = e.target;
+  show(doc) {
+    return (
+      <textarea
+        className="m0 bw1 w-100 h-100 b--light-gray"
+        value={doc ? doc.exposes : ""}
+        onChange={e => {
+          const { value } = e.target;
 
-              this.change(doc => {
-                if (!doc) { doc = {}; }
-
-                doc.exposes = value;
-                return doc;
-              });
-            }}
-          />
-        );
-      }
-    }
-  `,
-
-  Table: `
-    const TableTypes = {
-      expects: "Text",
-      exposes: "Table"
-    };
-
-    return class Table extends Widget {
-      static types = TableTypes;
-
-      handleExpectedDocChange(_, expectedDoc) {
-        const newDoc = (expectedDoc || "")
-          .split("\\n")
-          .filter(line => line.length > 0)
-          .map(line => line.split(",").map(text => text.trim()));
-
-        this.change(doc => {
-          if (!doc) { doc = {}; }
-
-          doc.exposes = newDoc;
-          return doc;
-        });
-      }
-
-      show(doc) {
-        if (!doc || !Array.isArray(doc.exposes)) {
-          return null;
-        }
-
-        return <table className="collapse ba br2 b--black-10 pa3">
-          <tbody>
-            {doc.exposes.map(column => (
-              <tr key={column} className="striped--near-white ">
-                {column.map(row => (
-                  <td key={row} className="pa2">
-                    {row}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      }
-    };
-  `,
-
-  List: `
-    const ListTypes = {
-      expects: "Text",
-      exposes: "List"
-    };
-
-    return class List extends Widget {
-      static types = ListTypes;
-
-      handleExpectedDocChange(_, expectedDoc) {
-        const newDoc = (expectedDoc || "")
-          .split("\\n")
-          .map(line => line.trim())
-          .filter(line => line.startsWith("* ") || line.startsWith("- "))
-          .map(line => line.replace("* ", "").replace("- ", ""));
-
-        this.change(doc => {
-          if (!doc) { doc = {}; }
-
-          doc.exposes = newDoc;
-          return doc;
-        });
-      }
-
-      show(doc) {
-        if (!doc || !Array.isArray(doc.exposes)) {
-          return null;
-        }
-
-        return <ul>
-          {doc.exposes.map(item => (
-            <li key={item}>
-              {item}
-            </li>
-          ))}
-        </ul>
-      }
-    };
-  `,
-
-  Grep: `
-    const GrepTypes = {
-      expects: "Text",
-      exposes: "Text"
-    };
-
-    return class Grep extends Widget {
-      static types = GrepTypes;
-
-      handleExpectedDocChange(doc, expectedDoc) {
-        const hasGrep = doc && doc.grep && doc.grep.length > 0;
-
-        if (!hasGrep) {
           this.change(doc => {
             if (!doc) { doc = {}; }
 
-            doc.exposes = expectedDoc || "";
+            doc.exposes = value;
             return doc;
           });
+        }}
+      />
+    );
+  }
+}`,
 
-          return;
-        }
+  Table: `
+const TableTypes = {
+  expects: "Text",
+  exposes: "Table"
+};
 
-        let reg;
+return class Table extends Widget {
+  static types = TableTypes;
 
-        try {
-          reg = new RegExp(doc.grep);
-        }
-        catch(e) {
-          console.log(e);
-        }
+  handleExpectedDocChange(_, expectedDoc) {
+    const newDoc = (expectedDoc || "")
+      .split("\\n")
+      .filter(line => line.length > 0)
+      .map(line => line.split(",").map(text => text.trim()));
 
-        const newDoc = (expectedDoc || "")
-          .split("\\n")
-          .filter(line => reg ? line.match(reg) : true)
-          .join("\\n");
+    this.change(doc => {
+      if (!doc) { doc = {}; }
 
-        this.change(doc => {
-          if (!doc) { doc = {}; }
+      doc.exposes = newDoc;
+      return doc;
+    });
+  }
 
-          doc.exposes = newDoc;
-          return doc;
-        });
-      }
+  show(doc) {
+    const columns = doc ? doc.exposes : [[" ", " "], [" ", " "]];
 
-      show(doc) {
-        return <div>
-          <div className="mb2">
-            <input
-              className="p2 w-100 code f6"
-              placeholder="Regular Expression"
-              value={doc ? (doc.grep || "") : ""}
-              onChange={e => {
-                const { value } = e.target;
+    return <table className="collapse ba br2 b--black-10 pa3">
+      <tbody>
+        {columns.map((column, i) => (
+          <tr key={column + i} className="striped--near-white ">
+            {column.map((row, j) => (
+              <td key={row + j} className="pa2">
+                {row}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  }
+}`,
 
-                this.change(doc => {
-                  if (!doc) { doc = {}; }
+  List: `
+const ListTypes = {
+  expects: "Text",
+  exposes: "List"
+};
 
-                  doc.grep = value;
-                  return doc;
-                })
-              }}
-            />
-          </div>
+return class List extends Widget {
+  static types = ListTypes;
 
-          <pre className="sans-serif">
-            {doc && doc.exposes}
-          </pre>
-        </div>
-      }
-    };
-  `,
+  handleExpectedDocChange(_, expectedDoc) {
+    const newDoc = (expectedDoc || "")
+      .split("\\n")
+      .map(line => line.trim())
+      .filter(line => line.startsWith("* ") || line.startsWith("- "))
+      .map(line => line.replace("* ", "").replace("- ", ""));
+
+    this.change(doc => {
+      if (!doc) { doc = {}; }
+
+      doc.exposes = newDoc;
+      return doc;
+    });
+  }
+
+  show(doc) {
+    const list = doc ? doc.exposes : [" "];
+
+    return <ul>
+      {list.map((item, i) => (
+        <li key={item + i}>
+          {item}
+        </li>
+      ))}
+    </ul>
+  }
+}`,
+
+  Grep: `
+const GrepTypes = {
+  expects: "Text",
+  exposes: "Text"
+};
+
+return class Grep extends Widget {
+  static types = GrepTypes;
+
+  handleExpectedDocChange(doc, expectedDoc) {
+    const hasGrep = doc && doc.grep && doc.grep.length > 0;
+
+    if (!hasGrep) {
+      this.change(doc => {
+        if (!doc) { doc = {}; }
+
+        doc.exposes = expectedDoc || "";
+        return doc;
+      });
+
+      return;
+    }
+
+    let reg;
+
+    try {
+      reg = new RegExp(doc.grep);
+    }
+    catch(e) {
+      console.log(e);
+    }
+
+    const newDoc = (expectedDoc || "")
+      .split("\\n")
+      .filter(line => reg ? line.match(reg) : true)
+      .join("\\n");
+
+    this.change(doc => {
+      if (!doc) { doc = {}; }
+
+      doc.exposes = newDoc;
+      return doc;
+    });
+  }
+
+  show(doc) {
+    return <div>
+      <div className="mb2">
+        <input
+          className="p2 w-100 code f6"
+          placeholder="Regular Expression"
+          value={doc ? (doc.grep || "") : ""}
+          onChange={e => {
+            const { value } = e.target;
+
+            this.change(doc => {
+              if (!doc) { doc = {}; }
+
+              doc.grep = value;
+              return doc;
+            })
+          }}
+        />
+      </div>
+
+      <pre className="sans-serif">
+        {doc && doc.exposes}
+      </pre>
+    </div>
+  }
+}`,
 
   "Word Count": `
-    const WordCountTypes = {
-      expects: "Text",
-      exposes: undefined
-    };
+const WordCountTypes = {
+  expects: "Text",
+  exposes: undefined
+};
 
-    return class WordCount extends Widget {
-      static types = WordCountTypes;
+return class WordCount extends Widget {
+  static types = WordCountTypes;
 
-      show(_, doc) {
-        return <div>
-          Word Count: {doc ? doc.split(" ").length : 0}
-        </div>
+  show(_, doc) {
+    return <div>
+      Word Count: {
+        doc
+          ? doc
+            .replace(/\\n/g, " ")
+            .split(" ")
+            .filter(l => l.length > 0)
+            .length
+          : 0
       }
-    };
-  `
+    </div>
+  }
+}`
 };
 
 const createDocWithContent = ({
@@ -400,7 +398,6 @@ class App extends Component {
     widgetInstances: {},
 
     // ephemeral stuff
-    copiedDocId: undefined,
     dragAdjust: [0, 0],
     widgetDropPosition: [0, 0],
 
@@ -446,48 +443,6 @@ class App extends Component {
       }
 
       this.setState({ editingWidgetCodeName: selectedDoc.widget });
-
-      return;
-    }
-
-    // copy doc
-    if (key === "ctrl+c") {
-      const selectedDoc = Object.values(this.state.docs).find(
-        d => d.isSelected
-      );
-
-      if (!selectedDoc) {
-        return;
-      }
-
-      this.setState({ copiedDocId: selectedDoc.id });
-
-      return;
-    }
-
-    // paste doc
-    if (key === "ctrl+v") {
-      if (!this.state.copiedDocId) {
-        return;
-      }
-
-      this.setState(
-        produce(draft => {
-          const copiedDoc = draft.docs[draft.copiedDocId];
-
-          const { doc } = createDocWithContent({
-            x: copiedDoc.rect[0] + 100,
-            y: copiedDoc.rect[1] + 100,
-            contentId: copiedDoc.contentId
-          });
-
-          draft.docs[doc.id] = doc;
-
-          Object.values(draft.docs).forEach(
-            d => (d.isSelected = d.id === doc.id)
-          );
-        })
-      );
 
       return;
     }
@@ -769,14 +724,7 @@ class App extends Component {
     return (
       <div className="min-vh-100 sans-serif flex">
         <KeyboardEventHandler
-          handleKeys={[
-            "ctrl+e",
-            "ctrl+c",
-            "ctrl+v",
-            "ctrl+d",
-            "ctrl+delete",
-            "ctrl+backspace"
-          ]}
+          handleKeys={["ctrl+e", "ctrl+d"]}
           onKeyEvent={this.handleKeyEvent}
         />
 
@@ -811,11 +759,12 @@ class App extends Component {
 
             const groupIdx = docToGroupIdx[doc.id];
 
-            const border = doc.isSelected
-              ? "b--red"
-              : groupIdx !== undefined && COLORS[groupIdx]
-                ? `b--${COLORS[groupIdx]}`
-                : "b--light-gray";
+            const color =
+              groupIdx !== undefined && COLORS[groupIdx]
+                ? `${COLORS[groupIdx]}`
+                : "light-gray";
+
+            const border = doc.isSelected ? "b--red" : `b--${color}`;
 
             const background = doc.isSelected ? "bg-red" : "bg-light-gray";
 
@@ -859,7 +808,9 @@ class App extends Component {
                           ${
                             draggedExposedType === types.expects
                               ? "bg-light-blue white"
-                              : "bg-white gray"
+                              : !!this.state.contents[doc.expectedContentId]
+                                ? `bg-${color} white`
+                                : "bg-white gray"
                           }
                         `}
                         {...draggedExposedType === types.expects &&
