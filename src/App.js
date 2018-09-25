@@ -372,7 +372,7 @@ class TryCatch extends React.Component {
   }
 }
 
-const Overlay = ({ children, onClick }) => (
+const Overlay = ({ children, style, onClick }) => (
   <div
     className="absolute absolute--fill bg-black-20"
     onClick={e => {
@@ -383,11 +383,13 @@ const Overlay = ({ children, onClick }) => (
   >
     <div
       className="absolute"
-      style={{
-        left: "50%",
-        top: "50%",
-        transform: "translate(-50%, -50%)"
-      }}
+      style={
+        style || {
+          left: "50%",
+          top: "50%",
+          transform: "translate(-50%, -50%)"
+        }
+      }
     >
       {children}
     </div>
@@ -893,6 +895,10 @@ class App extends Component {
 
           {isWidgetChooserVisible && (
             <Overlay
+              style={{
+                left: this.state.widgetDropPosition[0],
+                top: this.state.widgetDropPosition[1]
+              }}
               onClick={() => this.setState({ isWidgetChooserVisible: false })}
             >
               <div className="list pl0 ml0 center mw5 ba b--light-silver br3 bg-white">
@@ -920,6 +926,10 @@ class App extends Component {
 
           {isWidgetNameInputVisible && (
             <Overlay
+              style={{
+                left: this.state.widgetDropPosition[0],
+                top: this.state.widgetDropPosition[1]
+              }}
               onClick={() => this.setState({ isWidgetNameInputVisible: false })}
             >
               <div className="list pl0 ml0 center mw5 ba b--light-silver br3 bg-white">
