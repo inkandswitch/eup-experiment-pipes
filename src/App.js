@@ -57,6 +57,8 @@ const compileWidget = code => {
     return () => <pre className="red">{evalError.toString()}</pre>;
   }
 
+  evaled.hash = md5(code);
+
   return evaled;
 };
 
@@ -67,10 +69,15 @@ class Widget extends React.Component {
     this.props.change(cb);
   }
 
+  componentDidMount() {
+    if (this.handleExpectedDocChange) {
+      this.handleExpectedDocChange(this.props.doc, this.props.expectedDoc);
+    }
+  }
+
   componentDidUpdate(prevProps) {
     if (
       this.handleExpectedDocChange &&
-      this.props.expectedDoc &&
       (!deepEqual(this.props.doc, prevProps.doc) ||
         !deepEqual(this.props.expectedDoc, prevProps.expectedDoc))
     ) {
@@ -416,15 +423,16 @@ class App extends Component {
       {}
     );
 
-    this.setState({ widgetInstances: compiledWidgets });
+    this.setState({
+      widgetInstances: compiledWidgets
+    });
 
     this.debouncedCompile = debounce(widgetName => {
       this.setState(
         produce(draft => {
-          const source = draft.widgetSources[widgetName];
-
-          draft.widgetInstances[widgetName] = compileWidget(source);
-          draft.widgetInstances[widgetName].hash = md5(source);
+          draft.widgetInstances[widgetName] = compileWidget(
+            draft.widgetSources[widgetName]
+          );
         })
       );
     }, 1000);
@@ -489,7 +497,9 @@ class App extends Component {
   handleClickOutside = () => {
     this.setState(
       produce(draft => {
-        Object.values(draft.docs).forEach(d => (d.isSelected = false));
+        Object.values(draft.docs).forEach(d => {
+          d.isSelected = false;
+        });
       })
     );
   };
@@ -501,6 +511,10 @@ class App extends Component {
       produce(draft => {
         Object.values(draft.docs).forEach(d => {
           d.isSelected = d.id === doc.id;
+
+          if (d.id === doc.id && !!draft.editingWidgetCodeName) {
+            draft.editingWidgetCodeName = doc.widget;
+          }
         });
       })
     );
@@ -512,9 +526,14 @@ class App extends Component {
 
     this.setState(
       produce(draft => {
-        Object.values(draft.docs).forEach(
-          d => (d.isSelected = d.id === doc.id)
-        );
+        Object.values(draft.docs).forEach(d => {
+          d.isSelected = d.id === doc.id;
+
+          if (d.id === doc.id && !!draft.editingWidgetCodeName) {
+            draft.editingWidgetCodeName = doc.widget;
+          }
+        });
+
         draft.dragAdjust = [x - wx, y - wy];
       })
     );
@@ -556,9 +575,14 @@ class App extends Component {
 
     this.setState(
       produce(draft => {
-        Object.values(draft.docs).forEach(
-          d => (d.isSelected = d.id === doc.id)
-        );
+        Object.values(draft.docs).forEach(d => {
+          d.isSelected = d.id === doc.id;
+
+          if (d.id === doc.id && !!draft.editingWidgetCodeName) {
+            draft.editingWidgetCodeName = doc.widget;
+          }
+        });
+
         draft.dragAdjust = [x - ww, y - wh];
       })
     );
@@ -615,7 +639,6 @@ class App extends Component {
             // we don't have a source for this widget, so we need to make a new one
             draft.widgetSources[widgetName] = EMPTY_WIDGET;
             draft.widgetInstances[widgetName] = compileWidget(EMPTY_WIDGET);
-            draft.widgetInstances[widgetName].hash = md5(EMPTY_WIDGET);
           }
 
           const [x, y] = draft.widgetDropPosition;
@@ -764,9 +787,9 @@ class App extends Component {
                 ? `${COLORS[groupIdx]}`
                 : "light-gray";
 
-            const border = doc.isSelected ? "b--red" : `b--${color}`;
+            const border = doc.isSelected ? "b--blue" : `b--${color}`;
 
-            const background = doc.isSelected ? "bg-red" : "bg-light-gray";
+            const background = doc.isSelected ? "bg-blue" : "bg-light-gray";
 
             const types = this.state.widgetInstances[doc.widget].types || {
               expects: undefined,
