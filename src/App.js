@@ -5,7 +5,7 @@ import crypto from "crypto";
 import deepEqual from "deep-equal";
 import produce from "immer";
 import uuid from "uuid/v4";
-import { debounce, get } from "lodash";
+import { debounce, get, isFunction } from "lodash";
 
 import "brace/mode/javascript";
 import "brace/mode/jsx";
@@ -619,6 +619,10 @@ class App extends Component {
   };
 
   handleDocContentChange = (doc, callback) => {
+    if (!callback || !isFunction(callback)) {
+      return;
+    }
+
     this.setState(
       produce(draft => {
         draft.contents[doc.contentId].content = callback(
